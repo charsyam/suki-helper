@@ -4,9 +4,10 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from PySide6.QtCore import QBuffer, QIODevice
 from PySide6.QtGui import QImage, QPixmap
 
-from suki_helper.pdf.renderer import render_page_to_png
+from suki_helper.pdf.renderer import render_page_to_png, render_page_to_qimage
 from suki_helper.storage.db import AppPaths
 
 
@@ -21,6 +22,7 @@ class RenderService:
     def __init__(self, paths: AppPaths | None = None) -> None:
         self._paths = paths
         self._png_cache: dict[tuple[str, int, int], bytes] = {}
+        self._image_cache: dict[tuple[str, int, int], QImage] = {}
         self._pixmap_cache: dict[tuple[str, int, int], QPixmap] = {}
 
     def render_page_png_bytes(
@@ -69,17 +71,58 @@ class RenderService:
         if cached is not None:
             return cached
 
-        image = QImage.fromData(
-            self.render_page_png_bytes(
-                file_path=file_path,
-                page_number=page_number,
-                dpi=dpi,
-            ),
-            "PNG",
+        image = self.render_page_image(
+            file_path=file_path,
+            page_number=page_number,
+            dpi=dpi,
         )
         pixmap = QPixmap.fromImage(image)
         self._pixmap_cache[cache_key] = pixmap
         return pixmap
+
+    def render_page_image(
+        self,
+        *,
+        file_path: Path,
+        page_number: int,
+        dpi: int = 130,
+    ) -> QImage:
+        cache_key = (str(file_path), page_number, dpi)
+        cached = self._image_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        cache_paths = self._png_cache_paths(
+            file_path=file_path,
+            page_number=page_number,
+            dpi=dpi,
+        )
+        for cache_path in cache_paths:
+            if cache_path.exists():
+                image = QImage.fromData(cache_path.read_bytes(), "PNG")
+                self._image_cache[cache_key] = image
+                return image
+
+        rendered = render_page_to_qimage(
+            file_path,
+            page_number=page_number,
+            dpi=dpi,
+        )
+        image = rendered.image
+        png_bytes = self._image_to_png_bytes(image)
+        for cache_path in cache_paths:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_bytes(png_bytes)
+        self._png_cache[cache_key] = png_bytes
+        self._image_cache[cache_key] = image
+        return image
+
+    @staticmethod
+    def _image_to_png_bytes(image: QImage) -> bytes:
+        buffer = QBuffer()
+        buffer.open(QIODevice.WriteOnly)
+        image.save(buffer, "PNG")
+        return bytes(buffer.data())
 
     def _png_cache_paths(
         self,
