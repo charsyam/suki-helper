@@ -489,6 +489,7 @@ Status:
 - in progress
 - baseline benchmark script added
 - rarity-aware ranking signal added to reduce repeated-text dominance
+- initial Windows single-file packaging path defined
 
 Objective:
 
@@ -502,6 +503,7 @@ Tasks:
 - tune SQLite pragmas and connection reuse
 - tune thumbnail caching and render DPI
 - validate on Windows
+- verify the PyInstaller one-file build on a real Windows machine
 
 Depends on:
 

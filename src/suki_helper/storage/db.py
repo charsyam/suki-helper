@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from platformdirs import user_data_dir
+
 
 APP_DATA_DIRNAME = "data"
 INDEX_VERSION = 1
+APP_NAME = "suki-helper"
+APP_AUTHOR = "charsyam"
+ROOT_DIR_ENV_VAR = "SUKI_HELPER_ROOT"
 
 
 @dataclass(frozen=True)
@@ -31,7 +37,7 @@ class AppPaths:
 
 
 def get_app_paths(root_dir: Path | None = None) -> AppPaths:
-    project_root = root_dir or Path.cwd()
+    project_root = root_dir or _get_default_root_dir()
     data_dir = project_root / APP_DATA_DIRNAME
     indexes_dir = data_dir / "indexes"
     cache_dir = data_dir / "cache"
@@ -169,3 +175,10 @@ def bootstrap_storage(root_dir: Path | None = None) -> AppPaths:
     paths = get_app_paths(root_dir=root_dir)
     ensure_catalog_db(paths)
     return paths
+
+
+def _get_default_root_dir() -> Path:
+    configured_root = os.environ.get(ROOT_DIR_ENV_VAR, "").strip()
+    if configured_root:
+        return Path(configured_root).expanduser().resolve()
+    return Path(user_data_dir(APP_NAME, APP_AUTHOR))

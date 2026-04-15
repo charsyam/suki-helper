@@ -29,6 +29,8 @@ Current working state after that commit:
 - changing the selected PDF now resets the old search state
 - selecting a PDF now auto-renders its first page in the right pane
 - ordered-token ranking now strongly prefers closer matches over far-apart occurrences
+- default storage now uses a per-user app data directory for packaged builds
+- initial Windows one-file build script and PyInstaller spec added
 
 ## Implemented So Far
 
@@ -58,6 +60,7 @@ Current working state after that commit:
 - ordered-token proximity ranking implemented
 - page-frequency-based rarity weighting implemented
 - snippet/context extraction implemented
+- default per-user app data storage implemented
 
 ### UI
 
@@ -79,6 +82,10 @@ Current working state after that commit:
 - thumbnails are generated lazily for visible result rows
 - left pane shows an explicit no-results state when a search returns zero matches
 
+### Packaging
+
+- initial Windows single-file PyInstaller packaging path implemented
+
 ## Verified State
 
 Verification command:
@@ -90,7 +97,7 @@ PYTHONPATH=src pytest -q
 
 Latest verified result at the time of writing:
 
-- `20 passed`
+- `24 passed`
 
 App launch command:
 
@@ -106,6 +113,7 @@ PYTHONPATH=src python -m suki_helper.app.main
 - indexing has a worker-based UI path, but broader job orchestration is still minimal
 - thumbnail generation still runs on the UI thread for visible rows
 - performance tuning and Windows validation are still pending
+- the Windows build path is defined, but the actual `.exe` has not been produced or smoke-tested in a Windows environment yet
 - benchmark coverage is still basic and does not yet compare multiple document sizes
 - repeated text that appears on almost every page can still dominate when the query itself is globally repeated
 
