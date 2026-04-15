@@ -554,6 +554,11 @@ The next three tasks should be:
 2. replace eager thumbnail generation with lazy visible-row rendering
 3. add zoom and fit controls to the right-pane image viewer
 
+Completed since the last checkpoint:
+
+- background indexing and right-pane render workers added
+- right-pane `Fit Width`, `Actual Size`, `Zoom In`, and `Zoom Out` controls added
+
 Reason:
 
 - these tasks unlock the entire search core

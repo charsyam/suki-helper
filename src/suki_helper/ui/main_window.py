@@ -7,6 +7,7 @@ from PySide6.QtGui import QAction, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -45,6 +46,9 @@ class MainWindow(QMainWindow):
         self._results: list[SearchResult] = []
         self._thread_pool = QThreadPool.globalInstance()
         self._active_render_token = 0
+        self._current_page_pixmap: QPixmap | None = None
+        self._zoom_factor = 1.0
+        self._fit_width_mode = True
         self.setWindowTitle("suki-helper")
         self.resize(1400, 900)
         self._build_ui()
@@ -90,6 +94,21 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(container)
 
         self.page_title_label = QLabel("No page selected")
+        controls_row = QWidget()
+        controls_layout = QHBoxLayout(controls_row)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.fit_width_button = QPushButton("Fit Width")
+        self.actual_size_button = QPushButton("Actual Size")
+        self.zoom_out_button = QPushButton("-")
+        self.zoom_in_button = QPushButton("+")
+
+        controls_layout.addWidget(self.fit_width_button)
+        controls_layout.addWidget(self.actual_size_button)
+        controls_layout.addStretch(1)
+        controls_layout.addWidget(self.zoom_out_button)
+        controls_layout.addWidget(self.zoom_in_button)
+
         self.page_viewer = QLabel("High-resolution page preview will appear here.")
         self.page_viewer.setAlignment(Qt.AlignCenter)
         self.page_viewer.setMinimumSize(480, 640)
@@ -100,6 +119,7 @@ class MainWindow(QMainWindow):
         self.page_scroll_area.setWidget(self.page_viewer)
 
         layout.addWidget(self.page_title_label)
+        layout.addWidget(controls_row)
         layout.addWidget(self.page_scroll_area, 1)
         return container
 
@@ -149,6 +169,10 @@ class MainWindow(QMainWindow):
         self.exit_action.triggered.connect(self.close)
         self.search_input.returnPressed.connect(self._run_search)
         self.result_list.currentRowChanged.connect(self._display_selected_result)
+        self.fit_width_button.clicked.connect(self._set_fit_width_mode)
+        self.actual_size_button.clicked.connect(self._set_actual_size_mode)
+        self.zoom_in_button.clicked.connect(self._zoom_in)
+        self.zoom_out_button.clicked.connect(self._zoom_out)
 
     def _open_pdf_files(self) -> None:
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -227,6 +251,7 @@ class MainWindow(QMainWindow):
             self.result_list.setCurrentRow(0)
         else:
             self.page_title_label.setText("No page selected")
+            self._current_page_pixmap = None
             self.page_viewer.clear()
             self.page_viewer.setText("No search result. Try another keyword.")
 
@@ -273,13 +298,16 @@ class MainWindow(QMainWindow):
 
         image = QImage.fromData(png_bytes, "PNG")
         pixmap = QPixmap.fromImage(image)
+        self._current_page_pixmap = pixmap
+        self._zoom_factor = 1.0
+        self._fit_width_mode = True
         self.page_title_label.setText(f"Page {page_number}")
-        self.page_viewer.setPixmap(pixmap)
-        self.page_viewer.resize(pixmap.size())
+        self._apply_viewer_pixmap()
         self.statusBar().showMessage("Page render completed.", 3000)
 
     def _on_background_task_failed(self, message: str) -> None:
         self._set_busy_state(False, f"Background task failed: {message}")
+        self._current_page_pixmap = None
         self.page_viewer.clear()
         self.page_viewer.setText(f"Task failed: {message}")
 
@@ -288,3 +316,56 @@ class MainWindow(QMainWindow):
         self.empty_state_button.setEnabled(not is_busy)
         self.add_pdf_action.setEnabled(not is_busy)
         self.statusBar().showMessage(message, 5000 if not is_busy else 0)
+
+    def _set_fit_width_mode(self) -> None:
+        if self._current_page_pixmap is None:
+            return
+        self._fit_width_mode = True
+        self._apply_viewer_pixmap()
+
+    def _set_actual_size_mode(self) -> None:
+        if self._current_page_pixmap is None:
+            return
+        self._fit_width_mode = False
+        self._zoom_factor = 1.0
+        self._apply_viewer_pixmap()
+
+    def _zoom_in(self) -> None:
+        if self._current_page_pixmap is None:
+            return
+        self._fit_width_mode = False
+        self._zoom_factor = min(4.0, self._zoom_factor * 1.2)
+        self._apply_viewer_pixmap()
+
+    def _zoom_out(self) -> None:
+        if self._current_page_pixmap is None:
+            return
+        self._fit_width_mode = False
+        self._zoom_factor = max(0.25, self._zoom_factor / 1.2)
+        self._apply_viewer_pixmap()
+
+    def _apply_viewer_pixmap(self) -> None:
+        if self._current_page_pixmap is None:
+            return
+
+        if self._fit_width_mode:
+            available_width = max(320, self.page_scroll_area.viewport().width() - 24)
+            scaled = self._current_page_pixmap.scaledToWidth(
+                available_width,
+                Qt.SmoothTransformation,
+            )
+        else:
+            scaled = self._current_page_pixmap.scaled(
+                int(self._current_page_pixmap.width() * self._zoom_factor),
+                int(self._current_page_pixmap.height() * self._zoom_factor),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+
+        self.page_viewer.setPixmap(scaled)
+        self.page_viewer.resize(scaled.size())
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        if self._fit_width_mode and self._current_page_pixmap is not None:
+            self._apply_viewer_pixmap()

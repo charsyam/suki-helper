@@ -17,6 +17,7 @@ Current working state after that commit:
 - right-pane PDF page rendering implemented
 - left-pane result thumbnail generation implemented
 - background worker support added for PDF indexing and right-pane page rendering
+- right-pane zoom and fit controls added
 
 ## Implemented So Far
 
@@ -55,6 +56,7 @@ Current working state after that commit:
 - result click renders the selected page as an image in the right pane
 - result list items include basic page thumbnails
 - indexing and right-pane page rendering now run through worker tasks
+- right-pane supports `Fit Width`, `Actual Size`, `Zoom In`, and `Zoom Out`
 
 ## Verified State
 
@@ -83,7 +85,6 @@ PYTHONPATH=src python -m suki_helper.app.main
 - indexing has a worker-based UI path, but broader job orchestration is still minimal
 - thumbnail generation during search result population is still synchronous
 - visible-row lazy thumbnail loading is not yet implemented
-- zoom and fit viewer controls are not yet implemented
 - performance tuning and Windows validation are still pending
 
 ## Next Recommended Start Point
@@ -92,8 +93,8 @@ Resume from:
 
 1. implement a PDF page renderer using `PyMuPDF`
 2. make thumbnail loading lazy for visible search results
-3. add zoom and fit controls to the right-pane viewer
-4. benchmark larger PDFs and tune cache and worker behavior
+3. benchmark larger PDFs and tune cache and worker behavior
+4. add a more explicit indexing progress UI
 
 ## Rule For Future Updates
 
