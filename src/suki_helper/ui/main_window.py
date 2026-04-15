@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThreadPool, Qt
+from PySide6.QtCore import QSize, QThreadPool, Qt
 from PySide6.QtGui import QAction, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -78,8 +78,11 @@ class MainWindow(QMainWindow):
 
         self.result_count_label = QLabel("Results: 0")
         self.result_list = QListWidget()
+        self.result_list.setIconSize(QSize(180, 240))
+        self.result_list.setSpacing(10)
         self.left_stack = QStackedWidget()
         self.left_stack.addWidget(self._build_empty_state())
+        self.left_stack.addWidget(self._build_no_results_state())
         self.left_stack.addWidget(self.result_list)
 
         layout.addWidget(self.open_button)
@@ -150,6 +153,26 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(description)
         layout.addWidget(button_row)
+        layout.addStretch(1)
+        return container
+
+    def _build_no_results_state(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.addStretch(1)
+
+        title = QLabel("No Results")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+
+        description = QLabel(
+            "No matching text was found in the selected PDF.\nTry a different keyword or phrase."
+        )
+        description.setAlignment(Qt.AlignCenter)
+        description.setStyleSheet("color: #666;")
+
+        layout.addWidget(title)
+        layout.addWidget(description)
         layout.addStretch(1)
         return container
 
@@ -240,7 +263,7 @@ class MainWindow(QMainWindow):
         self._active_search_token += 1
         current_search_token = self._active_search_token
         self.result_list.clear()
-        self.left_stack.setCurrentIndex(1)
+        self.left_stack.setCurrentIndex(2)
 
         for result in self._results:
             item = QListWidgetItem(
@@ -250,6 +273,7 @@ class MainWindow(QMainWindow):
             item.setData(Qt.UserRole, result.page_number)
             item.setData(Qt.UserRole + 1, current_search_token)
             item.setIcon(QIcon())
+            item.setSizeHint(QSize(0, 260))
             self.result_list.addItem(item)
 
         self.result_count_label.setText(f"Results: {len(self._results)}")
@@ -257,6 +281,7 @@ class MainWindow(QMainWindow):
             self.result_list.setCurrentRow(0)
             self._request_visible_thumbnails()
         else:
+            self.left_stack.setCurrentIndex(1)
             self.page_title_label.setText("No page selected")
             self._current_page_pixmap = None
             self.page_viewer.clear()

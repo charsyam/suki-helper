@@ -487,6 +487,7 @@ Status:
 
 - in progress
 - baseline benchmark script added
+- rarity-aware ranking signal added to reduce repeated-text dominance
 
 Objective:
 
@@ -562,6 +563,7 @@ Completed since the last checkpoint:
 - right-pane `Fit Width`, `Actual Size`, `Zoom In`, and `Zoom Out` controls added
 - result thumbnails now load lazily for visible rows
 - benchmark entry point added for indexing and search timing
+- page-frequency-based rarity weighting added to ranking
 
 Reason:
 

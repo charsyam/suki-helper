@@ -161,6 +161,35 @@ def get_index_page_candidates(index_db_path: Path, grams: list[str]) -> list[sql
         return connection.execute(query, grams).fetchall()
 
 
+def get_index_gram_document_frequencies(
+    index_db_path: Path,
+    grams: list[str],
+) -> dict[str, int]:
+    if not grams:
+        return {}
+
+    placeholders = ", ".join("?" for _ in grams)
+    query = f"""
+        SELECT gram, COUNT(DISTINCT page_id) AS document_frequency
+        FROM gram_postings
+        WHERE gram IN ({placeholders})
+        GROUP BY gram
+    """
+    with connect_sqlite(index_db_path) as connection:
+        rows = connection.execute(query, grams).fetchall()
+    return {row["gram"]: row["document_frequency"] for row in rows}
+
+
+def get_index_meta_page_count(index_db_path: Path) -> int:
+    with connect_sqlite(index_db_path) as connection:
+        row = connection.execute(
+            "SELECT value FROM index_meta WHERE key = 'page_count'"
+        ).fetchone()
+    if row is None:
+        return 0
+    return int(row["value"])
+
+
 def get_index_pages_by_ids(index_db_path: Path, page_ids: list[int]) -> list[sqlite3.Row]:
     if not page_ids:
         return []

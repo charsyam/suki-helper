@@ -5,13 +5,20 @@ from pathlib import Path
 
 from suki_helper.search.context_extractor import extract_context
 from suki_helper.search.normalizer import normalize_for_search
-from suki_helper.search.ranker import RankedMatch, score_ranked_match, sort_key
+from suki_helper.search.ranker import (
+    RankedMatch,
+    compute_rarity_score,
+    score_ranked_match,
+    sort_key,
+)
 from suki_helper.search.tokenizer import make_2grams
 from suki_helper.storage.db import AppPaths
 from suki_helper.storage.repositories import (
     get_document_record_by_path,
+    get_index_meta_page_count,
     get_index_page_candidates,
     get_index_pages_by_ids,
+    get_index_gram_document_frequencies,
 )
 
 
@@ -28,6 +35,7 @@ class SearchResult:
     adjacent_token_match: bool
     ordered_token_match: bool
     gram_overlap_score: float
+    rarity_score: float
     first_match_offset: int
 
 
@@ -45,14 +53,20 @@ class SearchService:
             return []
 
         grams = make_2grams(normalized_query.normalized_text)
+        matched_grams = grams or [normalized_query.normalized_text]
         candidate_rows = get_index_page_candidates(
             index_db_path=Path(document_record["index_db_path"]),
-            grams=grams or [normalized_query.normalized_text],
+            grams=matched_grams,
         )
         if not candidate_rows:
             return []
 
         total_grams = max(1, len(grams) or 1)
+        total_pages = get_index_meta_page_count(Path(document_record["index_db_path"]))
+        gram_document_frequencies = get_index_gram_document_frequencies(
+            index_db_path=Path(document_record["index_db_path"]),
+            grams=matched_grams,
+        )
         page_rows = get_index_pages_by_ids(
             index_db_path=Path(document_record["index_db_path"]),
             page_ids=[row["page_id"] for row in candidate_rows],
@@ -64,6 +78,11 @@ class SearchService:
                 row for row in candidate_rows if row["page_id"] == page_row["page_id"]
             )
             gram_overlap_score = float(candidate["matched_grams"]) / float(total_grams)
+            rarity_score = compute_rarity_score(
+                matched_grams=matched_grams,
+                gram_document_frequencies=gram_document_frequencies,
+                total_pages=total_pages,
+            )
 
             ranked_match = score_ranked_match(
                 original_text=page_row["original_text"],
@@ -71,6 +90,7 @@ class SearchService:
                 normalized_query_text=normalized_query.normalized_text,
                 query_tokens=[token for token in query.split() if token],
                 gram_overlap_score=gram_overlap_score,
+                rarity_score=rarity_score,
             )
             if ranked_match is None:
                 continue
@@ -102,6 +122,7 @@ class SearchService:
                         adjacent_token_match=ranked_match.adjacent_token_match,
                         ordered_token_match=ranked_match.ordered_token_match,
                         gram_overlap_score=ranked_match.gram_overlap_score,
+                        rarity_score=ranked_match.rarity_score,
                         first_match_offset=ranked_match.first_match_offset,
                     ),
                     ranked_match,

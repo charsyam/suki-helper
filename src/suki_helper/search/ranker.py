@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 
 SEPARATOR_CHARACTERS = {" ", "\t", "\n", "\r", "-", "_", "/", ".", ","}
@@ -13,6 +14,7 @@ class RankedMatch:
     ordered_token_match: bool
     adjacency_rank: int
     gram_overlap_score: float
+    rarity_score: float
     first_match_offset: int
     compact_start: int
     compact_end: int
@@ -34,6 +36,7 @@ def score_ranked_match(
     normalized_query_text: str,
     query_tokens: list[str],
     gram_overlap_score: float,
+    rarity_score: float,
 ) -> RankedMatch | None:
     compact_span = find_compact_match(normalized_page_text, normalized_query_text)
     compact_start = compact_span[0] if compact_span is not None else -1
@@ -69,18 +72,36 @@ def score_ranked_match(
         ordered_token_match=ordered_token_match,
         adjacency_rank=adjacency_rank,
         gram_overlap_score=gram_overlap_score,
+        rarity_score=rarity_score,
         first_match_offset=first_match_offset,
         compact_start=compact_start,
         compact_end=compact_end,
     )
 
 
-def sort_key(match: RankedMatch, page_number: int) -> tuple[int, int, int, int, float, int, int]:
+def compute_rarity_score(
+    *,
+    matched_grams: list[str],
+    gram_document_frequencies: dict[str, int],
+    total_pages: int,
+) -> float:
+    if total_pages <= 0 or not matched_grams:
+        return 0.0
+
+    score = 0.0
+    for gram in matched_grams:
+        document_frequency = gram_document_frequencies.get(gram, total_pages)
+        score += math.log(((total_pages - document_frequency + 0.5) / (document_frequency + 0.5)) + 1.0)
+    return score
+
+
+def sort_key(match: RankedMatch, page_number: int) -> tuple[int, int, int, int, float, float, int, int]:
     return (
         match.adjacency_rank,
         int(match.exact_compact_match),
         int(match.adjacent_token_match),
         int(match.ordered_token_match),
+        match.rarity_score,
         match.gram_overlap_score,
         -match.first_match_offset,
         -page_number,

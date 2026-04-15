@@ -20,6 +20,8 @@ Current working state after that commit:
 - right-pane zoom and fit controls added
 - visible-row lazy thumbnail loading added
 - benchmark script added for indexing and search timing
+- rarity-aware ranking signal added
+- explicit no-results empty state added to the left pane
 
 ## Implemented So Far
 
@@ -46,6 +48,7 @@ Current working state after that commit:
 - selected-PDF-only search implemented
 - exact compact-match verification implemented
 - order-aware ranking implemented
+- page-frequency-based rarity weighting implemented
 - snippet/context extraction implemented
 
 ### UI
@@ -60,6 +63,7 @@ Current working state after that commit:
 - indexing and right-pane page rendering now run through worker tasks
 - right-pane supports `Fit Width`, `Actual Size`, `Zoom In`, and `Zoom Out`
 - thumbnails are generated lazily for visible result rows
+- left pane shows an explicit no-results state when a search returns zero matches
 
 ## Verified State
 
@@ -72,7 +76,7 @@ PYTHONPATH=src pytest -q
 
 Latest verified result at the time of writing:
 
-- `18 passed`
+- `19 passed`
 
 App launch command:
 
@@ -89,6 +93,7 @@ PYTHONPATH=src python -m suki_helper.app.main
 - thumbnail generation still runs on the UI thread for visible rows
 - performance tuning and Windows validation are still pending
 - benchmark coverage is still basic and does not yet compare multiple document sizes
+- repeated text that appears on almost every page can still dominate when the query itself is globally repeated
 
 ## Next Recommended Start Point
 
