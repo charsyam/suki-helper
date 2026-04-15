@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSplitter,
@@ -25,6 +26,7 @@ from suki_helper.services.document_registry import DocumentRegistryService, Regi
 from suki_helper.services.preview_service import PreviewService
 from suki_helper.services.render_service import RenderService
 from suki_helper.services.search_service import SearchResult, SearchService
+from suki_helper.workers.indexing_worker import IndexingWorker
 from suki_helper.workers.task_worker import TaskWorker
 
 
@@ -76,6 +78,13 @@ class MainWindow(QMainWindow):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter search keyword and press Enter")
 
+        self.index_status_label = QLabel("Indexing status: idle")
+        self.index_progress_bar = QProgressBar()
+        self.index_progress_bar.setRange(0, 1)
+        self.index_progress_bar.setValue(0)
+        self.index_progress_bar.setTextVisible(True)
+        self.index_progress_bar.hide()
+
         self.result_count_label = QLabel("Results: 0")
         self.result_list = QListWidget()
         self.result_list.setIconSize(QSize(180, 240))
@@ -90,6 +99,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.pdf_selector)
         layout.addWidget(QLabel("Search"))
         layout.addWidget(self.search_input)
+        layout.addWidget(self.index_status_label)
+        layout.addWidget(self.index_progress_bar)
         layout.addWidget(self.result_count_label)
         layout.addWidget(self.left_stack, 1)
         return container
@@ -213,12 +224,14 @@ class MainWindow(QMainWindow):
             return
 
         self._set_busy_state(True, "Indexing PDF files...")
-        worker = TaskWorker(
-            lambda: [
-                self._document_registry.register_pdf(Path(file_path))
-                for file_path in file_paths
-            ]
+        self.index_progress_bar.setRange(0, len(file_paths))
+        self.index_progress_bar.setValue(0)
+        self.index_progress_bar.show()
+        worker = IndexingWorker(
+            document_registry=self._document_registry,
+            file_paths=[Path(file_path) for file_path in file_paths],
         )
+        worker.signals.progress.connect(self._on_indexing_progress)
         worker.signals.finished.connect(self._on_pdf_indexing_finished)
         worker.signals.failed.connect(self._on_background_task_failed)
         self._thread_pool.start(worker)
@@ -226,6 +239,8 @@ class MainWindow(QMainWindow):
     def _on_pdf_indexing_finished(self, _result: object) -> None:
         self._refresh_document_selector()
         self.pdf_selector.setCurrentIndex(max(0, self.pdf_selector.count() - 1))
+        self.index_progress_bar.hide()
+        self.index_status_label.setText("Indexing status: completed")
         self._set_busy_state(False, "PDF indexing completed.")
 
     def _refresh_document_selector(self) -> None:
@@ -371,6 +386,8 @@ class MainWindow(QMainWindow):
 
     def _on_background_task_failed(self, message: str) -> None:
         self._set_busy_state(False, f"Background task failed: {message}")
+        self.index_progress_bar.hide()
+        self.index_status_label.setText(f"Indexing status: failed - {message}")
         self._current_page_pixmap = None
         self.page_viewer.clear()
         self.page_viewer.setText(f"Task failed: {message}")
@@ -380,6 +397,16 @@ class MainWindow(QMainWindow):
         self.empty_state_button.setEnabled(not is_busy)
         self.add_pdf_action.setEnabled(not is_busy)
         self.statusBar().showMessage(message, 5000 if not is_busy else 0)
+
+    def _on_indexing_progress(self, completed: int, total: int, current_name: str) -> None:
+        self.index_progress_bar.setRange(0, max(1, total))
+        self.index_progress_bar.setValue(completed)
+        if completed >= total:
+            self.index_status_label.setText("Indexing status: completed")
+        else:
+            self.index_status_label.setText(
+                f"Indexing status: {completed + 1}/{total} - {current_name}"
+            )
 
     def _set_fit_width_mode(self) -> None:
         if self._current_page_pixmap is None:

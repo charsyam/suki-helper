@@ -22,6 +22,7 @@ Current working state after that commit:
 - benchmark script added for indexing and search timing
 - rarity-aware ranking signal added
 - explicit no-results empty state added to the left pane
+- indexing progress UI added
 
 ## Implemented So Far
 
@@ -56,6 +57,7 @@ Current working state after that commit:
 - startup empty state implemented
 - PDF add flow implemented
 - indexed PDF selection implemented
+- indexing progress label and progress bar implemented
 - Enter-based search connected
 - result list connected
 - result click renders the selected page as an image in the right pane
@@ -76,7 +78,7 @@ PYTHONPATH=src pytest -q
 
 Latest verified result at the time of writing:
 
-- `19 passed`
+- `20 passed`
 
 App launch command:
 
@@ -101,8 +103,8 @@ Resume from:
 
 1. benchmark larger PDFs and tune cache and worker behavior
 2. move visible-row thumbnail generation off the UI thread safely
-3. add a more explicit indexing progress UI
-4. validate the current flow on Windows
+3. validate the current flow on Windows
+4. refine repeated-text penalties for globally repeated queries
 
 ## Rule For Future Updates
 

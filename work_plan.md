@@ -340,6 +340,7 @@ Status:
 
 - completed for local indexing flow
 - background indexing worker added for the current UI path
+- explicit indexing progress UI added
 
 Objective:
 
@@ -564,6 +565,7 @@ Completed since the last checkpoint:
 - result thumbnails now load lazily for visible rows
 - benchmark entry point added for indexing and search timing
 - page-frequency-based rarity weighting added to ranking
+- indexing progress label and progress bar added
 
 Reason:
 
