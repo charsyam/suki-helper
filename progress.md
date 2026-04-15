@@ -36,6 +36,8 @@ Current working state after that commit:
 - render and thumbnail disk cache added for reuse across app restarts
 - application theme is now fixed to a light palette regardless of OS dark mode
 - theme option added with Light, Dark, and System modes persisted in settings
+- left pane simplified to PDF selection, keyword input, search button, and results only
+- thumbnail quality reduced again to improve search/result responsiveness
 
 ## Implemented So Far
 
@@ -84,6 +86,7 @@ Current working state after that commit:
 - right pane supports previous-page and next-page navigation
 - right pane page navigation also works with keyboard Up/Down keys
 - result list items include basic page thumbnails
+- left pane controls simplified and on-screen option widgets removed
 - indexing and right-pane page rendering now run through worker tasks
 - right-pane supports `Fit Width`, `Actual Size`, `Zoom In`, and `Zoom Out`
 - thumbnails are generated lazily for visible result rows

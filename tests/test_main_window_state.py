@@ -12,7 +12,6 @@ from suki_helper.services.render_service import RenderService
 from suki_helper.services.search_service import SearchService
 from suki_helper.storage.db import bootstrap_storage
 from suki_helper.ui.main_window import MainWindow
-from suki_helper.app.theme import save_theme_mode
 
 
 def _create_sample_pdf(pdf_path: Path, text: str) -> None:
@@ -94,7 +93,7 @@ def test_removing_selected_pdf_resets_ui_state(tmp_path: Path, monkeypatch) -> N
     assert window._documents_by_index == []
 
 
-def test_search_option_controls_are_wired(tmp_path: Path) -> None:
+def test_search_controls_are_wired(tmp_path: Path) -> None:
     _get_app()
     paths = bootstrap_storage(root_dir=tmp_path)
     document_registry = DocumentRegistryService(paths)
@@ -114,31 +113,5 @@ def test_search_option_controls_are_wired(tmp_path: Path) -> None:
         search_service=search_service,
     )
 
-    assert window.require_order_checkbox.isChecked() is True
-    assert window.separator_only_checkbox.isChecked() is False
-    assert window.max_gap_checkbox.isChecked() is False
-    assert window.max_gap_spinbox.isEnabled() is False
-
-    window.max_gap_checkbox.setChecked(True)
-
-    assert window.max_gap_spinbox.isEnabled() is True
-
-
-def test_theme_selector_reflects_saved_theme_mode(tmp_path: Path) -> None:
-    _get_app()
-    paths = bootstrap_storage(root_dir=tmp_path)
-    save_theme_mode(paths, "dark")
-    document_registry = DocumentRegistryService(paths)
-    render_service = RenderService()
-    preview_service = PreviewService(render_service)
-    search_service = SearchService(paths)
-
-    window = MainWindow(
-        paths=paths,
-        document_registry=document_registry,
-        preview_service=preview_service,
-        render_service=render_service,
-        search_service=search_service,
-    )
-
-    assert window.theme_selector.currentData() == "dark"
+    assert window.search_button.text() == "Search"
+    assert window.search_input.isEnabled() is True

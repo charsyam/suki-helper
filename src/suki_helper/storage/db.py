@@ -34,7 +34,6 @@ class AppPaths:
     thumbs_dir: Path
     renders_dir: Path
     catalog_db_path: Path
-    settings_json_path: Path
 
 
 def get_app_paths(root_dir: Path | None = None) -> AppPaths:
@@ -52,7 +51,6 @@ def get_app_paths(root_dir: Path | None = None) -> AppPaths:
         thumbs_dir=thumbs_dir,
         renders_dir=renders_dir,
         catalog_db_path=data_dir / "catalog.db",
-        settings_json_path=data_dir / "settings.json",
     )
 
 

@@ -4,10 +4,9 @@ import html
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, QThreadPool, Qt
-from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QImage, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QGuiApplication, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -21,17 +20,15 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
-    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from suki_helper.app.theme import ThemeMode, apply_theme_mode, load_theme_mode, save_theme_mode
 from suki_helper.services.document_registry import DocumentRegistryService, RegisteredDocument
 from suki_helper.services.preview_service import PreviewService
 from suki_helper.services.render_service import RenderService
-from suki_helper.services.search_service import SearchOptions, SearchResult, SearchService
+from suki_helper.services.search_service import SearchResult, SearchService
 from suki_helper.storage.db import AppPaths
 from suki_helper.workers.indexing_worker import IndexingWorker
 from suki_helper.workers.task_worker import TaskWorker
@@ -65,6 +62,7 @@ class MainWindow(QMainWindow):
         self._fit_width_mode = True
         self._result_document_path: Path | None = None
         self._result_thumbnail_labels: dict[int, QLabel] = {}
+        self._result_row_widgets: dict[int, QWidget] = {}
         self.setWindowTitle("suki-helper")
         self._configure_initial_window_size()
         self._build_ui()
@@ -79,58 +77,49 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         left_pane = self._build_left_pane()
         right_pane = self._build_right_pane()
-        left_pane.setMinimumWidth(560)
+        left_pane.setMinimumWidth(430)
         right_pane.setMinimumWidth(900)
         splitter.addWidget(left_pane)
         splitter.addWidget(right_pane)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 8)
-        splitter.setSizes([620, 1360])
+        splitter.setSizes([470, 1510])
         self.setCentralWidget(splitter)
 
     def _build_left_pane(self) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        selector_actions = QWidget()
-        selector_actions_layout = QHBoxLayout(selector_actions)
-        selector_actions_layout.setContentsMargins(0, 0, 0, 0)
-        selector_actions_layout.setSpacing(8)
+        pdf_row = QWidget()
+        pdf_row_layout = QHBoxLayout(pdf_row)
+        pdf_row_layout.setContentsMargins(0, 0, 0, 0)
+        pdf_row_layout.setSpacing(8)
 
-        self.open_button = QPushButton("Add PDF")
-        self.remove_button = QPushButton("Remove PDF")
-        selector_actions_layout.addWidget(self.open_button)
-        selector_actions_layout.addWidget(self.remove_button)
+        self.open_button = QPushButton("Add")
+        self.remove_button = QPushButton("Remove")
         self.pdf_selector = QComboBox()
+        self.pdf_selector.setMinimumHeight(38)
+        pdf_row_layout.addWidget(self.pdf_selector, 1)
+        pdf_row_layout.addWidget(self.open_button)
+        pdf_row_layout.addWidget(self.remove_button)
+
+        search_row = QWidget()
+        search_row_layout = QHBoxLayout(search_row)
+        search_row_layout.setContentsMargins(0, 0, 0, 0)
+        search_row_layout.setSpacing(8)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Enter search keyword and press Enter")
-        self.search_input.setMinimumHeight(44)
+        self.search_input.setPlaceholderText("Enter search keyword")
+        self.search_input.setMinimumHeight(40)
         self.search_input.setStyleSheet(
             "font-size: 15px; padding: 8px 12px;"
         )
-        self.theme_selector = QComboBox()
-        self.theme_selector.addItem("Light", "light")
-        self.theme_selector.addItem("Dark", "dark")
-        self.theme_selector.addItem("System", "system")
-        self.require_order_checkbox = QCheckBox("Require order")
-        self.require_order_checkbox.setChecked(True)
-        self.separator_only_checkbox = QCheckBox("Separator only")
-        self.max_gap_checkbox = QCheckBox("Use max gap")
-        self.max_gap_spinbox = QSpinBox()
-        self.max_gap_spinbox.setRange(0, 999)
-        self.max_gap_spinbox.setValue(8)
-        self.max_gap_spinbox.setEnabled(False)
-
-        search_options_row = QWidget()
-        search_options_layout = QHBoxLayout(search_options_row)
-        search_options_layout.setContentsMargins(0, 0, 0, 0)
-        search_options_layout.setSpacing(8)
-        search_options_layout.addWidget(self.require_order_checkbox)
-        search_options_layout.addWidget(self.separator_only_checkbox)
-        search_options_layout.addWidget(self.max_gap_checkbox)
-        search_options_layout.addWidget(self.max_gap_spinbox)
-        search_options_layout.addStretch(1)
+        self.search_button = QPushButton("Search")
+        self.search_button.setMinimumHeight(40)
+        search_row_layout.addWidget(self.search_input, 1)
+        search_row_layout.addWidget(self.search_button)
 
         self.index_status_label = QLabel("Indexing status: idle")
         self.index_progress_bar = QProgressBar()
@@ -148,18 +137,19 @@ class MainWindow(QMainWindow):
         self.left_stack.addWidget(self._build_no_results_state())
         self.left_stack.addWidget(self.result_list)
 
-        layout.addWidget(selector_actions)
-        layout.addWidget(QLabel("PDF"))
-        layout.addWidget(self.pdf_selector)
-        layout.addWidget(QLabel("Search"))
-        layout.addWidget(self.search_input)
-        layout.addWidget(QLabel("Theme"))
-        layout.addWidget(self.theme_selector)
-        layout.addWidget(search_options_row)
-        layout.addWidget(self.index_status_label)
-        layout.addWidget(self.index_progress_bar)
-        layout.addWidget(self.result_count_label)
-        layout.addWidget(self.left_stack, 1)
+        results_panel = QWidget()
+        results_panel.setStyleSheet(
+            "background: #fffdf8; border: 1px solid #ddd6c8; border-radius: 10px;"
+        )
+        results_panel_layout = QVBoxLayout(results_panel)
+        results_panel_layout.setContentsMargins(8, 8, 8, 8)
+        results_panel_layout.setSpacing(6)
+        results_panel_layout.addWidget(self.result_count_label)
+        results_panel_layout.addWidget(self.left_stack, 1)
+
+        layout.addWidget(pdf_row)
+        layout.addWidget(search_row)
+        layout.addWidget(results_panel, 1)
         return container
 
     def _build_right_pane(self) -> QWidget:
@@ -283,23 +273,6 @@ class MainWindow(QMainWindow):
         self.exit_action = QAction("Exit", self)
         file_menu.addAction(self.exit_action)
 
-        view_menu = self.menuBar().addMenu("View")
-        theme_menu = view_menu.addMenu("Theme")
-        self.theme_action_group = QActionGroup(self)
-        self.theme_action_group.setExclusive(True)
-        self.light_theme_action = QAction("Light", self, checkable=True)
-        self.dark_theme_action = QAction("Dark", self, checkable=True)
-        self.system_theme_action = QAction("System", self, checkable=True)
-        for action in (
-            self.light_theme_action,
-            self.dark_theme_action,
-            self.system_theme_action,
-        ):
-            self.theme_action_group.addAction(action)
-            theme_menu.addAction(action)
-        self._sync_theme_menu()
-        self._sync_theme_selector()
-
     def _build_shortcuts(self) -> None:
         self.prev_page_shortcut = QShortcut(QKeySequence(Qt.Key_Up), self)
         self.next_page_shortcut = QShortcut(QKeySequence(Qt.Key_Down), self)
@@ -332,13 +305,9 @@ class MainWindow(QMainWindow):
         self.add_pdf_action.triggered.connect(self._open_pdf_files)
         self.remove_pdf_action.triggered.connect(self._remove_selected_pdf)
         self.exit_action.triggered.connect(self.close)
-        self.light_theme_action.triggered.connect(lambda: self._set_theme_mode("light"))
-        self.dark_theme_action.triggered.connect(lambda: self._set_theme_mode("dark"))
-        self.system_theme_action.triggered.connect(lambda: self._set_theme_mode("system"))
         self.pdf_selector.currentIndexChanged.connect(self._on_selected_document_changed)
         self.search_input.returnPressed.connect(self._run_search)
-        self.theme_selector.currentIndexChanged.connect(self._on_theme_selector_changed)
-        self.max_gap_checkbox.toggled.connect(self.max_gap_spinbox.setEnabled)
+        self.search_button.clicked.connect(self._run_search)
         self.result_list.currentRowChanged.connect(self._display_selected_result)
         self.result_list.verticalScrollBar().valueChanged.connect(
             self._request_visible_thumbnails
@@ -423,12 +392,12 @@ class MainWindow(QMainWindow):
         self._results = self._search_service.search(
             file_path=selected_document.file_path,
             query=self.search_input.text(),
-            options=self._current_search_options(),
         )
         self._result_document_path = selected_document.file_path
         self._active_search_token += 1
         current_search_token = self._active_search_token
         self._result_thumbnail_labels = {}
+        self._result_row_widgets = {}
         self.result_list.clear()
         self.left_stack.setCurrentIndex(3)
 
@@ -436,10 +405,11 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem()
             item.setData(Qt.UserRole, result.page_number)
             item.setData(Qt.UserRole + 1, current_search_token)
-            item.setSizeHint(QSize(0, 500))
+            item.setSizeHint(QSize(0, 140))
             self.result_list.addItem(item)
             widget, thumbnail_label = self._build_result_item_widget(result)
             self._result_thumbnail_labels[row_index] = thumbnail_label
+            self._result_row_widgets[row_index] = widget
             self.result_list.setItemWidget(item, widget)
 
         self.result_count_label.setText(f"Results: {len(self._results)}")
@@ -455,6 +425,7 @@ class MainWindow(QMainWindow):
             )
 
     def _display_selected_result(self, row_index: int) -> None:
+        self._update_result_row_styles(selected_row=row_index)
         if row_index < 0 or row_index >= len(self._results):
             return
 
@@ -533,46 +504,6 @@ class MainWindow(QMainWindow):
                     return True
 
         return super().eventFilter(watched, event)
-
-    def _current_search_options(self) -> SearchOptions:
-        max_gap_chars: int | None = None
-        if self.max_gap_checkbox.isChecked():
-            max_gap_chars = int(self.max_gap_spinbox.value())
-        return SearchOptions(
-            require_ordered_match=self.require_order_checkbox.isChecked(),
-            separator_only_match=self.separator_only_checkbox.isChecked(),
-            max_gap_chars=max_gap_chars,
-        )
-
-    def _set_theme_mode(self, mode: ThemeMode) -> None:
-        save_theme_mode(self._paths, mode)
-        app = QApplication.instance()
-        if app is None:
-            return
-        apply_theme_mode(app, mode)
-        self._sync_theme_menu()
-        self._sync_theme_selector()
-
-    def _sync_theme_menu(self) -> None:
-        current_mode = load_theme_mode(self._paths)
-        self.light_theme_action.setChecked(current_mode == "light")
-        self.dark_theme_action.setChecked(current_mode == "dark")
-        self.system_theme_action.setChecked(current_mode == "system")
-
-    def _sync_theme_selector(self) -> None:
-        current_mode = load_theme_mode(self._paths)
-        index = self.theme_selector.findData(current_mode)
-        if index < 0:
-            index = self.theme_selector.findData("light")
-        previous = self.theme_selector.blockSignals(True)
-        self.theme_selector.setCurrentIndex(index)
-        self.theme_selector.blockSignals(previous)
-
-    def _on_theme_selector_changed(self, current_index: int) -> None:
-        mode = self.theme_selector.itemData(current_index)
-        if mode not in {"light", "dark", "system"}:
-            return
-        self._set_theme_mode(mode)
 
     def _request_visible_thumbnails(self) -> None:
         if self._result_document_path is None:
@@ -844,15 +775,13 @@ class MainWindow(QMainWindow):
     def _build_result_item_widget(self, result: SearchResult) -> tuple[QWidget, QLabel]:
         container = QWidget()
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(16)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(10)
 
-        container.setStyleSheet(
-            "background: #faf8f2; border: 1px solid #ddd6c8; border-radius: 10px;"
-        )
+        self._apply_result_row_style(container, is_selected=False)
 
         thumbnail_label = QLabel()
-        thumbnail_label.setFixedSize(320, 440)
+        thumbnail_label.setFixedSize(84, 112)
         thumbnail_label.setAlignment(Qt.AlignCenter)
         thumbnail_label.setStyleSheet(
             "background: #f4f4f4; border: 1px solid #d4d4d4; border-radius: 8px;"
@@ -864,20 +793,34 @@ class MainWindow(QMainWindow):
             "background: #fffdf8; border: 1px solid #e2dccf; border-radius: 8px;"
         )
         text_panel_layout = QVBoxLayout(text_panel)
-        text_panel_layout.setContentsMargins(14, 14, 14, 14)
-        text_panel_layout.setSpacing(8)
+        text_panel_layout.setContentsMargins(10, 10, 10, 10)
+        text_panel_layout.setSpacing(4)
 
         text_label = QLabel()
         text_label.setWordWrap(True)
         text_label.setTextFormat(Qt.RichText)
         text_label.setTextInteractionFlags(Qt.NoTextInteraction)
-        text_label.setMinimumWidth(320)
+        text_label.setMinimumWidth(160)
         text_label.setText(self._build_highlighted_result_html(result))
         text_panel_layout.addWidget(text_label)
 
         layout.addWidget(thumbnail_label)
         layout.addWidget(text_panel, 1)
         return container, thumbnail_label
+
+    def _update_result_row_styles(self, *, selected_row: int) -> None:
+        for row_index, widget in self._result_row_widgets.items():
+            self._apply_result_row_style(widget, is_selected=(row_index == selected_row))
+
+    def _apply_result_row_style(self, widget: QWidget, *, is_selected: bool) -> None:
+        if is_selected:
+            widget.setStyleSheet(
+                "background: #f3e4be; border: 2px solid #c99b3c; border-radius: 10px;"
+            )
+            return
+        widget.setStyleSheet(
+            "background: #faf8f2; border: 1px solid #ddd6c8; border-radius: 10px;"
+        )
 
     def _build_highlighted_result_html(self, result: SearchResult) -> str:
         before = html.escape(result.context_before)

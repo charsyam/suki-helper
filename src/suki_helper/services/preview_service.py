@@ -26,8 +26,8 @@ class PreviewService:
         *,
         file_path: Path,
         page_number: int,
-        width: int = 420,
-        dpi: int = 288,
+        width: int = 180,
+        dpi: int = 130,
     ) -> QPixmap:
         cache_key = (str(file_path), page_number, width, dpi)
         cached = self._pixmap_cache.get(cache_key)
@@ -65,7 +65,7 @@ class PreviewService:
         file_path: Path,
         page_number: int,
         width: int = 120,
-        dpi: int = 288,
+        dpi: int = 130,
     ) -> QIcon:
         cache_key = (str(file_path), page_number, width, dpi)
         cached = self._icon_cache.get(cache_key)
