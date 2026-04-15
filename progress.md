@@ -19,6 +19,7 @@ Current working state after that commit:
 - background worker support added for PDF indexing and right-pane page rendering
 - right-pane zoom and fit controls added
 - visible-row lazy thumbnail loading added
+- benchmark script added for indexing and search timing
 
 ## Implemented So Far
 
@@ -71,7 +72,7 @@ PYTHONPATH=src pytest -q
 
 Latest verified result at the time of writing:
 
-- `17 passed`
+- `18 passed`
 
 App launch command:
 
@@ -87,6 +88,7 @@ PYTHONPATH=src python -m suki_helper.app.main
 - indexing has a worker-based UI path, but broader job orchestration is still minimal
 - thumbnail generation still runs on the UI thread for visible rows
 - performance tuning and Windows validation are still pending
+- benchmark coverage is still basic and does not yet compare multiple document sizes
 
 ## Next Recommended Start Point
 

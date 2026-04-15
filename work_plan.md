@@ -486,6 +486,7 @@ Exit criteria:
 Status:
 
 - in progress
+- baseline benchmark script added
 
 Objective:
 
@@ -560,6 +561,7 @@ Completed since the last checkpoint:
 - background indexing and right-pane render workers added
 - right-pane `Fit Width`, `Actual Size`, `Zoom In`, and `Zoom Out` controls added
 - result thumbnails now load lazily for visible rows
+- benchmark entry point added for indexing and search timing
 
 Reason:
 

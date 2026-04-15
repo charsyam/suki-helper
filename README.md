@@ -22,6 +22,13 @@ source .venv/bin/activate
 python -m suki_helper.app.main
 ```
 
+## Benchmark
+
+```bash
+source .venv/bin/activate
+PYTHONPATH=src python -m suki_helper.tools.benchmark_search /path/to/file.pdf "search query"
+```
+
 ## Status
 
 This repository is in early MVP scaffolding.
