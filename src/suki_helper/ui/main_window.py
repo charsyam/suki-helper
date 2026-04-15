@@ -88,6 +88,10 @@ class MainWindow(QMainWindow):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter search keyword and press Enter")
+        self.search_input.setMinimumHeight(44)
+        self.search_input.setStyleSheet(
+            "font-size: 15px; padding: 8px 12px;"
+        )
 
         self.index_status_label = QLabel("Indexing status: idle")
         self.index_progress_bar = QProgressBar()
