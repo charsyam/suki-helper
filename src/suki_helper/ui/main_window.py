@@ -3,8 +3,10 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, QThreadPool, Qt
-from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, QPointF, QSize, QThreadPool, Qt
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtPdf import QPdfDocument
+from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -31,7 +33,6 @@ from suki_helper.services.render_service import RenderService
 from suki_helper.services.search_service import SearchResult, SearchService
 from suki_helper.storage.db import AppPaths
 from suki_helper.workers.indexing_worker import IndexingWorker
-from suki_helper.workers.task_worker import TaskWorker
 
 
 class MainWindow(QMainWindow):
@@ -53,9 +54,7 @@ class MainWindow(QMainWindow):
         self._documents_by_index: list[RegisteredDocument] = []
         self._results: list[SearchResult] = []
         self._thread_pool = QThreadPool.globalInstance()
-        self._active_render_token = 0
         self._active_search_token = 0
-        self._current_page_pixmap: QPixmap | None = None
         self._current_document: RegisteredDocument | None = None
         self._current_page_number: int | None = None
         self._zoom_factor = 1.0
@@ -63,6 +62,7 @@ class MainWindow(QMainWindow):
         self._result_document_path: Path | None = None
         self._result_thumbnail_labels: dict[int, QLabel] = {}
         self._result_row_widgets: dict[int, QWidget] = {}
+        self._pdf_document = QPdfDocument(self)
         self.setWindowTitle("suki-helper")
         self._configure_initial_window_size()
         self._build_ui()
@@ -167,29 +167,32 @@ class MainWindow(QMainWindow):
         self.next_page_button = QPushButton("Next Page")
         self.zoom_out_button = QPushButton("-")
         self.zoom_in_button = QPushButton("+")
+        self.page_jump_input = QLineEdit()
+        self.page_jump_input.setPlaceholderText("Page")
+        self.page_jump_input.setFixedWidth(90)
+        self.page_jump_input.setAlignment(Qt.AlignCenter)
+        self.page_jump_button = QPushButton("Go")
 
         controls_layout.addWidget(self.prev_page_button)
         controls_layout.addWidget(self.next_page_button)
+        controls_layout.addWidget(self.page_jump_input)
+        controls_layout.addWidget(self.page_jump_button)
         controls_layout.addWidget(self.fit_width_button)
         controls_layout.addWidget(self.actual_size_button)
         controls_layout.addStretch(1)
         controls_layout.addWidget(self.zoom_out_button)
         controls_layout.addWidget(self.zoom_in_button)
 
-        self.page_viewer = QLabel("High-resolution page preview will appear here.")
-        self.page_viewer.setAlignment(Qt.AlignCenter)
-        self.page_viewer.setMinimumSize(900, 1200)
-        self.page_viewer.setStyleSheet("background: #f4f4f4; color: #666;")
-        self.page_viewer.setFocusPolicy(Qt.StrongFocus)
-        self.page_scroll_area = QScrollArea()
-        self.page_scroll_area.setWidgetResizable(True)
-        self.page_scroll_area.setAlignment(Qt.AlignCenter)
-        self.page_scroll_area.setWidget(self.page_viewer)
-        self.page_scroll_area.setFocusPolicy(Qt.StrongFocus)
+        self.pdf_viewer = QPdfView()
+        self.pdf_viewer.setDocument(self._pdf_document)
+        self.pdf_viewer.setPageMode(QPdfView.PageMode.MultiPage)
+        self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+        self.pdf_viewer.setFocusPolicy(Qt.StrongFocus)
+        self.pdf_viewer.setStyleSheet("background: #e8e0d0;")
 
         layout.addWidget(self.page_title_label)
         layout.addWidget(controls_row)
-        layout.addWidget(self.page_scroll_area, 1)
+        layout.addWidget(self.pdf_viewer, 1)
         return container
 
     def _build_empty_state(self) -> QWidget:
@@ -282,9 +285,7 @@ class MainWindow(QMainWindow):
     def _install_key_handlers(self) -> None:
         self.result_list.installEventFilter(self)
         self.result_list.viewport().installEventFilter(self)
-        self.page_scroll_area.installEventFilter(self)
-        self.page_scroll_area.viewport().installEventFilter(self)
-        self.page_viewer.installEventFilter(self)
+        self.pdf_viewer.installEventFilter(self)
 
     def _configure_initial_window_size(self) -> None:
         screen = QGuiApplication.primaryScreen()
@@ -319,6 +320,12 @@ class MainWindow(QMainWindow):
         self.next_page_shortcut.activated.connect(self._handle_next_page_shortcut)
         self.zoom_in_button.clicked.connect(self._zoom_in)
         self.zoom_out_button.clicked.connect(self._zoom_out)
+        self.page_jump_button.clicked.connect(self._go_to_requested_page)
+        self.page_jump_input.returnPressed.connect(self._go_to_requested_page)
+        self._pdf_document.statusChanged.connect(self._on_pdf_document_status_changed)
+        self.pdf_viewer.pageNavigator().currentPageChanged.connect(
+            self._on_pdf_current_page_changed
+        )
 
     def _open_pdf_files(self) -> None:
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -343,14 +350,34 @@ class MainWindow(QMainWindow):
         worker.signals.failed.connect(self._on_background_task_failed)
         self._thread_pool.start(worker)
 
-    def _on_pdf_indexing_finished(self, _result: object) -> None:
+    def _on_pdf_indexing_finished(self, result: object) -> None:
         self._refresh_document_selector()
-        self.pdf_selector.setCurrentIndex(max(0, self.pdf_selector.count() - 1))
+        indexed_documents = result if isinstance(result, list) else []
+        selected_file_path: Path | None = None
+        if indexed_documents:
+            last_indexed = indexed_documents[-1]
+            if isinstance(last_indexed, RegisteredDocument):
+                selected_file_path = last_indexed.file_path
+
+        if selected_file_path is not None:
+            selected_index = next(
+                (
+                    index
+                    for index, document in enumerate(self._documents_by_index)
+                    if document.file_path == selected_file_path
+                ),
+                -1,
+            )
+            if selected_index >= 0:
+                self.pdf_selector.setCurrentIndex(selected_index)
+        elif self.pdf_selector.count() > 0:
+            self.pdf_selector.setCurrentIndex(0)
         self.index_progress_bar.hide()
         self.index_status_label.setText("Indexing status: completed")
         self._set_busy_state(False, "PDF indexing completed.")
 
     def _refresh_document_selector(self) -> None:
+        previous_file_path = self._selected_document().file_path if self._selected_document() is not None else None
         self._documents_by_index = self._document_registry.list_documents()
         self.pdf_selector.clear()
         if not self._documents_by_index:
@@ -362,11 +389,12 @@ class MainWindow(QMainWindow):
             self.result_count_label.setText("Results: 0")
             self.left_stack.setCurrentIndex(0)
             self.page_title_label.setText("No page selected")
-            self.page_viewer.clear()
-            self.page_viewer.setText("High-resolution page preview will appear here.")
-            self._current_page_pixmap = None
             self._current_document = None
             self._current_page_number = None
+            self.page_jump_input.clear()
+            self.page_jump_input.setEnabled(False)
+            self.page_jump_button.setEnabled(False)
+            self._pdf_document.close()
             self._update_page_navigation_buttons()
             return
 
@@ -379,6 +407,16 @@ class MainWindow(QMainWindow):
                 f"{document.file_name} ({document.page_count} pages)"
             )
         self._reset_selected_document_view(clear_query=False)
+        selected_index = next(
+            (
+                index
+                for index, document in enumerate(self._documents_by_index)
+                if document.file_path == previous_file_path
+            ),
+            0,
+        )
+        self.pdf_selector.setCurrentIndex(selected_index)
+        self._on_selected_document_changed(selected_index)
 
     def _run_search(self) -> None:
         selected_document = self._selected_document()
@@ -417,7 +455,6 @@ class MainWindow(QMainWindow):
             self._request_visible_thumbnails()
         else:
             self.left_stack.setCurrentIndex(2)
-            self._update_page_navigation_buttons()
             self.statusBar().showMessage(
                 "No search result. You can still browse pages on the right.",
                 5000,
@@ -433,7 +470,7 @@ class MainWindow(QMainWindow):
             return
 
         result = self._results[row_index]
-        self._start_page_render(selected_document, result.page_number)
+        self._show_document_page(selected_document, result.page_number)
 
     def _selected_document(self) -> RegisteredDocument | None:
         current_index = self.pdf_selector.currentIndex()
@@ -478,9 +515,7 @@ class MainWindow(QMainWindow):
                     return True
 
                 if watched in (
-                    self.page_scroll_area,
-                    self.page_scroll_area.viewport(),
-                    self.page_viewer,
+                    self.pdf_viewer,
                 ):
                     if key == Qt.Key_Up:
                         self._show_previous_page()
@@ -493,8 +528,7 @@ class MainWindow(QMainWindow):
                     return True
 
                 if focused is not None and (
-                    self._focus_within(self.page_scroll_area)
-                    or self._focus_within(self.page_viewer)
+                    self._focus_within(self.pdf_viewer)
                 ):
                     if key == Qt.Key_Up:
                         self._show_previous_page()
@@ -538,38 +572,19 @@ class MainWindow(QMainWindow):
             if thumbnail_label is not None:
                 thumbnail_label.setPixmap(pixmap)
 
-    def _on_page_render_finished(self, payload: object) -> None:
-        render_token, page_number, image = payload
-        if render_token != self._active_render_token:
-            return
-
-        pixmap = QPixmap.fromImage(image)
-        self._current_page_pixmap = pixmap
-        self._current_page_number = page_number
-        self._zoom_factor = 1.0
-        self._fit_width_mode = True
-        self.page_title_label.setText(f"Page {page_number}")
-        self._update_page_navigation_buttons()
-        self._apply_viewer_pixmap()
-        self.statusBar().showMessage("Page render completed.", 3000)
-
     def _on_background_task_failed(self, message: str) -> None:
         self._set_busy_state(False, f"Background task failed: {message}")
         self.index_progress_bar.hide()
         self.index_status_label.setText(f"Indexing status: failed - {message}")
-        self._current_page_pixmap = None
         self._current_page_number = None
-        self.page_viewer.clear()
         if "no such file" in message.lower() or "cannot open" in message.lower():
-            self.page_viewer.setText(
-                "Original PDF file is missing.\nCached preview is unavailable for this page."
-            )
+            self.page_title_label.setText("Original PDF file is missing")
             self.statusBar().showMessage(
                 "Original PDF file is missing. Search index remains available.",
                 5000,
             )
         else:
-            self.page_viewer.setText(f"Task failed: {message}")
+            self.page_title_label.setText(f"Viewer failed: {message}")
         self._update_page_navigation_buttons()
 
     def _set_busy_state(self, is_busy: bool, message: str) -> None:
@@ -591,57 +606,39 @@ class MainWindow(QMainWindow):
             )
 
     def _set_fit_width_mode(self) -> None:
-        if self._current_page_pixmap is None:
+        if self._pdf_document.pageCount() <= 0:
             return
         self._fit_width_mode = True
-        self._apply_viewer_pixmap()
+        self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
 
     def _set_actual_size_mode(self) -> None:
-        if self._current_page_pixmap is None:
+        if self._pdf_document.pageCount() <= 0:
             return
         self._fit_width_mode = False
         self._zoom_factor = 1.0
-        self._apply_viewer_pixmap()
+        self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.Custom)
+        self.pdf_viewer.setZoomFactor(self._zoom_factor)
 
     def _zoom_in(self) -> None:
-        if self._current_page_pixmap is None:
+        if self._pdf_document.pageCount() <= 0:
             return
         self._fit_width_mode = False
         self._zoom_factor = min(4.0, self._zoom_factor * 1.2)
-        self._apply_viewer_pixmap()
+        self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.Custom)
+        self.pdf_viewer.setZoomFactor(self._zoom_factor)
 
     def _zoom_out(self) -> None:
-        if self._current_page_pixmap is None:
+        if self._pdf_document.pageCount() <= 0:
             return
         self._fit_width_mode = False
         self._zoom_factor = max(0.25, self._zoom_factor / 1.2)
-        self._apply_viewer_pixmap()
-
-    def _apply_viewer_pixmap(self) -> None:
-        if self._current_page_pixmap is None:
-            return
-
-        if self._fit_width_mode:
-            available_width = max(320, self.page_scroll_area.viewport().width() - 24)
-            scaled = self._current_page_pixmap.scaledToWidth(
-                available_width,
-                Qt.SmoothTransformation,
-            )
-        else:
-            scaled = self._current_page_pixmap.scaled(
-                int(self._current_page_pixmap.width() * self._zoom_factor),
-                int(self._current_page_pixmap.height() * self._zoom_factor),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-
-        self.page_viewer.setPixmap(scaled)
-        self.page_viewer.resize(scaled.size())
+        self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.Custom)
+        self.pdf_viewer.setZoomFactor(self._zoom_factor)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        if self._fit_width_mode and self._current_page_pixmap is not None:
-            self._apply_viewer_pixmap()
+        if self._fit_width_mode and self._pdf_document.pageCount() > 0:
+            self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
 
     def _handle_prev_page_shortcut(self) -> None:
         if self.search_input.hasFocus():
@@ -666,7 +663,7 @@ class MainWindow(QMainWindow):
         current_page_number = self._current_page_number or 1
         if current_page_number <= 1:
             return
-        self._start_page_render(document, current_page_number - 1)
+        self._show_document_page(document, current_page_number - 1)
 
     def _show_next_page(self) -> None:
         document = self._current_document or self._selected_document()
@@ -675,53 +672,49 @@ class MainWindow(QMainWindow):
         current_page_number = self._current_page_number or 1
         if current_page_number >= document.page_count:
             return
-        self._start_page_render(document, current_page_number + 1)
+        self._show_document_page(document, current_page_number + 1)
 
-    def _start_page_render(
+    def _show_document_page(
         self,
         document: RegisteredDocument,
         page_number: int,
     ) -> None:
+        if page_number < 1 or page_number > document.page_count:
+            return
+
         self._current_document = document
         self._current_page_number = page_number
-        self.page_title_label.setText(f"Page {page_number}")
-        self.page_viewer.clear()
-        self.page_viewer.setText("Rendering page preview...")
+        self.page_title_label.setText(f"{document.file_name} - Page {page_number}/{document.page_count}")
+        self.page_jump_input.setText(str(page_number))
+        self.page_jump_input.setEnabled(True)
+        self.page_jump_button.setEnabled(True)
         self._update_page_navigation_buttons()
 
-        self._active_render_token += 1
-        current_token = self._active_render_token
-        worker = TaskWorker(
-            lambda: (
-                current_token,
-                page_number,
-                self._render_service.render_page_image(
-                    file_path=document.file_path,
-                    page_number=page_number,
-                    dpi=120,
-                ),
-            )
-        )
-        worker.signals.finished.connect(self._on_page_render_finished)
-        worker.signals.failed.connect(self._on_background_task_failed)
-        self._thread_pool.start(worker)
+        if self._load_pdf_document(document.file_path):
+            self.pdf_viewer.pageNavigator().jump(page_number - 1, QPointF(0, 0))
+            self.statusBar().showMessage(f"Moved to page {page_number}.", 3000)
 
     def _update_page_navigation_buttons(self) -> None:
         document = self._current_document or self._selected_document()
         if document is None:
             self.prev_page_button.setEnabled(False)
             self.next_page_button.setEnabled(False)
+            self.page_jump_input.setEnabled(False)
+            self.page_jump_button.setEnabled(False)
             return
 
-        self.prev_page_button.setEnabled(True)
-        self.next_page_button.setEnabled(True)
+        current_page = self._current_page_number or 1
+        self.prev_page_button.setEnabled(current_page > 1)
+        self.next_page_button.setEnabled(current_page < document.page_count)
+        self.page_jump_input.setEnabled(True)
+        self.page_jump_button.setEnabled(True)
 
     def _on_selected_document_changed(self, current_index: int) -> None:
         if current_index < 0 or current_index >= len(self._documents_by_index):
             return
         document = self._documents_by_index[current_index]
         self._reset_selected_document_view(clear_query=True)
-        self._start_page_render(document, 1)
+        self._show_document_page(document, 1)
 
     def _remove_selected_pdf(self) -> None:
         document = self._selected_document()
@@ -763,12 +756,11 @@ class MainWindow(QMainWindow):
             self.search_input.clear()
         self.left_stack.setCurrentIndex(1)
         self.page_title_label.setText("No page selected")
-        self._current_page_pixmap = None
         self._current_document = None
         self._current_page_number = None
+        self.page_jump_input.clear()
+        self._pdf_document.close()
         self._update_page_navigation_buttons()
-        self.page_viewer.clear()
-        self.page_viewer.setText("Loading first page preview...")
 
     def _build_result_item_widget(self, result: SearchResult) -> tuple[QWidget, QLabel]:
         container = QWidget()
@@ -838,3 +830,67 @@ class MainWindow(QMainWindow):
             f"</div>"
             f"</div>"
         )
+
+    def _load_pdf_document(self, file_path: Path) -> bool:
+        current_source = self._pdf_document.property("sourcePath")
+        if current_source == str(file_path) and self._pdf_document.pageCount() > 0:
+            return True
+
+        self._pdf_document.close()
+        error = self._pdf_document.load(str(file_path))
+        if error != QPdfDocument.Error.None_:
+            self._pdf_document.setProperty("sourcePath", "")
+            self.page_title_label.setText(f"Failed to open PDF: {file_path.name}")
+            self.statusBar().showMessage(
+                f"Failed to open PDF viewer for {file_path.name}.",
+                5000,
+            )
+            return False
+
+        self._pdf_document.setProperty("sourcePath", str(file_path))
+        self.pdf_viewer.setDocument(self._pdf_document)
+        self.pdf_viewer.setPageMode(QPdfView.PageMode.MultiPage)
+        if self._fit_width_mode:
+            self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+        else:
+            self.pdf_viewer.setZoomMode(QPdfView.ZoomMode.Custom)
+            self.pdf_viewer.setZoomFactor(self._zoom_factor)
+        return True
+
+    def _go_to_requested_page(self) -> None:
+        document = self._current_document or self._selected_document()
+        if document is None:
+            return
+
+        raw_value = self.page_jump_input.text().strip()
+        if not raw_value.isdigit():
+            self.statusBar().showMessage("Enter a valid page number.", 4000)
+            return
+
+        page_number = int(raw_value)
+        if page_number < 1 or page_number > document.page_count:
+            self.statusBar().showMessage(
+                f"Page number must be between 1 and {document.page_count}.",
+                4000,
+            )
+            return
+
+        self._show_document_page(document, page_number)
+
+    def _on_pdf_current_page_changed(self, page_index: int) -> None:
+        page_number = page_index + 1
+        if page_number <= 0:
+            return
+        self._current_page_number = page_number
+        if self._current_document is not None:
+            self.page_title_label.setText(
+                f"{self._current_document.file_name} - Page {page_number}/{self._current_document.page_count}"
+            )
+        self.page_jump_input.setText(str(page_number))
+        self._update_page_navigation_buttons()
+
+    def _on_pdf_document_status_changed(self, status: QPdfDocument.Status) -> None:
+        if status == QPdfDocument.Status.Ready and self._current_document is not None:
+            self.page_title_label.setText(
+                f"{self._current_document.file_name} - Page {self._current_page_number or 1}/{self._current_document.page_count}"
+            )

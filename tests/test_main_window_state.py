@@ -115,3 +115,96 @@ def test_search_controls_are_wired(tmp_path: Path) -> None:
 
     assert window.search_button.text() == "Search"
     assert window.search_input.isEnabled() is True
+
+
+def test_page_jump_moves_to_requested_page(tmp_path: Path) -> None:
+    _get_app()
+    paths = bootstrap_storage(root_dir=tmp_path)
+    document_registry = DocumentRegistryService(paths)
+    render_service = RenderService()
+    preview_service = PreviewService(render_service)
+    search_service = SearchService(paths)
+
+    pdf_path = tmp_path / "multi.pdf"
+    document = fitz.open()
+    for page_number in range(1, 4):
+        page = document.new_page()
+        page.insert_text((72, 72), f"page {page_number}")
+    document.save(pdf_path)
+    document.close()
+
+    document_registry.register_pdf(pdf_path)
+
+    window = MainWindow(
+        paths=paths,
+        document_registry=document_registry,
+        preview_service=preview_service,
+        render_service=render_service,
+        search_service=search_service,
+    )
+
+    window.page_jump_input.setText("3")
+    window._go_to_requested_page()
+
+    assert window._pdf_document.pageCount() == 3
+    assert window._current_page_number == 3
+    assert window.page_jump_input.text() == "3"
+
+
+def test_indexing_finished_selects_newly_added_pdf(tmp_path: Path) -> None:
+    _get_app()
+    paths = bootstrap_storage(root_dir=tmp_path)
+    document_registry = DocumentRegistryService(paths)
+    render_service = RenderService()
+    preview_service = PreviewService(render_service)
+    search_service = SearchService(paths)
+
+    first_pdf = tmp_path / "zeta.pdf"
+    second_pdf = tmp_path / "alpha.pdf"
+    _create_sample_pdf(first_pdf, "first")
+    _create_sample_pdf(second_pdf, "second")
+
+    first_registered = document_registry.register_pdf(first_pdf)
+
+    window = MainWindow(
+        paths=paths,
+        document_registry=document_registry,
+        preview_service=preview_service,
+        render_service=render_service,
+        search_service=search_service,
+    )
+
+    assert window._selected_document() is not None
+    assert window._selected_document().file_path == first_pdf
+
+    second_registered = document_registry.register_pdf(second_pdf)
+    window._on_pdf_indexing_finished([second_registered])
+
+    assert window._selected_document() is not None
+    assert window._selected_document().file_path == second_pdf
+
+
+def test_window_initially_opens_first_selected_pdf(tmp_path: Path) -> None:
+    _get_app()
+    paths = bootstrap_storage(root_dir=tmp_path)
+    document_registry = DocumentRegistryService(paths)
+    render_service = RenderService()
+    preview_service = PreviewService(render_service)
+    search_service = SearchService(paths)
+
+    pdf_path = tmp_path / "sample.pdf"
+    _create_sample_pdf(pdf_path, "alpha beta")
+    document_registry.register_pdf(pdf_path)
+
+    window = MainWindow(
+        paths=paths,
+        document_registry=document_registry,
+        preview_service=preview_service,
+        render_service=render_service,
+        search_service=search_service,
+    )
+
+    assert window._selected_document() is not None
+    assert window._selected_document().file_path == pdf_path
+    assert window._pdf_document.pageCount() == 1
+    assert window._current_page_number == 1
